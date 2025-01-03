@@ -52,7 +52,7 @@ circles = cv2.HoughCircles(
     gray,  # Use the original grayscale image for better results
     cv2.HOUGH_GRADIENT,
     dp=1.2,
-    minDist=250,
+    minDist=300,
     param1=100,
     param2=30,
     minRadius=80,
@@ -69,7 +69,7 @@ detected_numbers = []
 # Define the circular area constraints
 image_height, image_width = image.shape[:2]
 center_x, center_y = image_width // 2, image_height // 2
-area_radius = image_height // 2
+area_radius = int(image_height // 2 * 0.85)
 
 # Step 7: Filter circles based on the circular area
 if circles is not None:
@@ -78,12 +78,11 @@ if circles is not None:
     output_image = image.copy()
     
     for circle in circles[0, :]:
-        circle_x, circle_y, circle_radius = circle
-        print(circle_radius)
+        circle_x, circle_y, circle_radius = map(int, circle)  
         # Calculate the distance from the center of the circular area
         distance_from_center = np.sqrt((circle_x - center_x) ** 2 + (circle_y - center_y) ** 2)
         # Check if the circle is within the specified area
-        if distance_from_center + circle_radius <= area_radius:
+        if distance_from_center <= area_radius:
             filtered_circles.append(circle)
             # Draw the circle and its center
             cv2.circle(output_image, (circle_x, circle_y), circle_radius, (0, 255, 0), 2)
@@ -92,7 +91,8 @@ if circles is not None:
     # Show the filtered circles
     if filtered_circles:
         
-        show_image("Filtered Circles in Specified Area", cv2.cvtColor(output_image, cv2.COLOR_BGR2RGB))
+        pass
+        #show_image("Filtered Circles in Specified Area", cv2.cvtColor(output_image, cv2.COLOR_BGR2RGB))
     else:
         print("No circles detected in the specified area.")
 else:
@@ -104,6 +104,7 @@ if filtered_circles is not None:
     circles = filtered_circles#np.uint16(np.around(filtered_circles))
     #num_circles = min(len(circles[0, :]), MAX_CIRCLES)
     for idx, circle in enumerate(circles):#[0, :num_circles]):
+    #for idx, circle in enumerate(detected_circles):
         print(circle)
         x, y, r = circle
         # Draw the circle perimeter
@@ -111,40 +112,45 @@ if filtered_circles is not None:
         # Draw the circle center
         cv2.circle(output_image, (x, y), 2, (0, 0, 255), 3)
 
-        # Crop the region of interest (ROI)
-        r *= 0.6
-        r = int(r)
-        roi = gray[max(0, y - r):y + r, max(0, x - r):x + r]
-        blurred_roi = cv2.GaussianBlur(roi, (11, 11), 0)
+        retry_factors = [0.675, 0.5]  # Define the factors to reduce r in case of failure
+        detected = False  # Flag to indicate if a valid number was found
 
-        #show_image(f"Circle {idx + 1} ROI", roi, cmap='gray')
+        for factor in retry_factors:
+            # Crop the region of interest (ROI)
+            adjusted_r = int(r * factor)
+            roi = gray[max(0, y - adjusted_r):y + adjusted_r, max(0, x - adjusted_r):x + adjusted_r]
+            blurred_roi = cv2.medianBlur(roi, 7)
 
-        # Threshold the ROI
-        roi_binary = cv2.adaptiveThreshold(
-            blurred_roi, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2
-        )
-        #show_image(f"Circle {idx + 1} Thresholded ROI", roi_binary, cmap='gray')
-        cv2.imwrite(f"Circle {idx + 1}.png", roi_binary)
-
-        # Perform OCR on the cropped circle
-        custom_config = r'--oem 3 --psm 6 -c tessedit_char_whitelist=0123456789'
-        circle_text = pytesseract.image_to_string(roi_binary, config=custom_config).strip()
-
-        print(circle_text)
-
-        # Store the detected number if valid
-        if circle_text.isdigit():
-            detected_numbers.append(circle_text)
-            # Annotate the detected number on the original image
-            cv2.putText(
-                output_image, 
-                circle_text, 
-                (x - r, y - r - 10), 
-                cv2.FONT_HERSHEY_SIMPLEX, 
-                10, 
-                (255, 0, 0), 
-                5
+            # Threshold the ROI
+            roi_binary = cv2.adaptiveThreshold(
+                blurred_roi, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2
             )
+
+            # Perform OCR on the cropped circle
+            custom_config = r'--oem 3 --psm 6 -c tessedit_char_whitelist=0123456789'
+            circle_text = pytesseract.image_to_string(blurred_roi, config=custom_config).strip()
+
+            print(f"Factor: {factor}, Detected text: {circle_text}")
+
+            # Check if OCR result is valid
+            if circle_text.isdigit():
+                detected_numbers.append(circle_text)
+                # Annotate the detected number on the original image
+                cv2.putText(
+                    output_image, 
+                    circle_text, 
+                    (x - adjusted_r, y - adjusted_r - 10), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 
+                    10, 
+                    (255, 0, 0), 
+                    5
+                )
+                detected = True
+                break  # Exit the retry loop if a valid number is detected
+
+        if not detected:
+            print(f"No valid number detected for circle {idx + 1}.")
+
 
 # Step 5: Display the final output image with circles and detected numbers
 #show_image("Detected Circles and Numbers", cv2.cvtColor(output_image, cv2.COLOR_BGR2RGB))
