@@ -3,7 +3,31 @@ import matplotlib.pyplot as plt
 from scipy.spatial import distance
 from matplotlib.animation import FuncAnimation
 
-def random_point_adjustment(detected_numbers, num_points=1000, radius=10, max_iterations=1000):
+
+# Example detected numbers
+detected_numbers = [
+    ('6',  np.uint16(1966), np.uint16(2237)),
+    ('11', np.uint16(1573), np.uint16(1663)),
+    ('3',  np.uint16(2314), np.uint16(2919)),
+    ('5',  np.uint16(3322), np.uint16(2288)),
+    ('5',  np.uint16(1569), np.uint16(2827)),
+    ('4',  np.uint16(1162), np.uint16(2399)),
+    ('11', np.uint16(2677), np.uint16(2243)),
+    ('8',  np.uint16(1010), np.uint16(1557)),
+    ('10', np.uint16(1996), np.uint16(1039)),
+    ('3',  np.uint16(2626), np.uint16(1089)),
+    ('9',  np.uint16(1291), np.uint16(1060)),
+    ('2',  np.uint16(1631), np.uint16(547)),
+    ('4',  np.uint16(2975), np.uint16(1634)),
+    ('8',  np.uint16(2998), np.uint16(2917)),
+    ('12', np.uint16(3316), np.uint16(1094)),
+    ('9',  np.uint16(2323), np.uint16(519)),
+    ('10', np.uint16(3646), np.uint16(1673)),
+    ('6',  np.uint16(2968), np.uint16(543))
+]
+
+
+def random_point_adjustment(detected_numbers, num_points=2000, radius=10, max_iterations=1000):
     # Extract field positions
     field_positions = [(int(x), int(y)) for _, x, y in detected_numbers]
 
@@ -68,9 +92,9 @@ def random_point_adjustment(detected_numbers, num_points=1000, radius=10, max_it
     return np.array(final_points), history, avg_distances
 
 
-def animate_evolution(history, detected_numbers, image_path, interval=2000, save_as_gif=False):
+def animate_evolution(history, detected_numbers, image_path, interval=500, save_as_gif=False):
     # Load the background image
-    img = imread(image_path)
+    img = plt.imread(image_path)
 
     # Extract field positions
     field_positions = [(int(x), int(y)) for _, x, y in detected_numbers]
@@ -111,11 +135,10 @@ def animate_evolution(history, detected_numbers, image_path, interval=2000, save
 
     plt.show()
 
-from matplotlib.pyplot import imread
 
 def plot_evolution_with_background(history, detected_numbers, image_path):
     # Load the background image
-    img = imread(image_path)
+    img = plt.imread(image_path)
 
     # Plot the evolution of points
     for i, points in enumerate(history):
@@ -145,7 +168,7 @@ def plot_evolution_with_background(history, detected_numbers, image_path):
 # Final points plot function with background
 def plot_final_with_background(final_points, detected_numbers, image_path):
     # Load the background image
-    img = imread(image_path)
+    img = plt.imread(image_path)
 
     plt.figure(figsize=(8, 8))
     plt.title("Final Points")
@@ -171,57 +194,79 @@ def plot_final_with_background(final_points, detected_numbers, image_path):
     plt.show()
 
 
-# Example detected numbers
-detected_numbers = [
-    ('6',  np.uint16(1966), np.uint16(2237)),
-    ('11', np.uint16(1573), np.uint16(1663)),
-    ('3',  np.uint16(2314), np.uint16(2919)),
-    ('5',  np.uint16(3322), np.uint16(2288)),
-    ('5',  np.uint16(1569), np.uint16(2827)),
-    ('4',  np.uint16(1162), np.uint16(2399)),
-    ('11', np.uint16(2677), np.uint16(2243)),
-    ('8',  np.uint16(1010), np.uint16(1557)),
-    ('10', np.uint16(1996), np.uint16(1039)),
-    ('3',  np.uint16(2626), np.uint16(1089)),
-    ('9',  np.uint16(1291), np.uint16(1060)),
-    ('2',  np.uint16(1631), np.uint16(547)),
-    ('4',  np.uint16(2975), np.uint16(1634)),
-    ('8',  np.uint16(2998), np.uint16(2917)),
-    ('12', np.uint16(3316), np.uint16(1094)),
-    ('9',  np.uint16(2323), np.uint16(519)),
-    ('10', np.uint16(3646), np.uint16(1673)),
-    ('6',  np.uint16(2968), np.uint16(543))
-]
+def adjust_points_to_fields(final_points, field_positions, history, radius=10, angular_tolerance=15):
+    new_points = np.empty((0, 2))  # Initialize as an empty 2D NumPy array
+    angular_tolerance_rad = np.deg2rad(angular_tolerance)  # Convert angular tolerance to radians
 
-"""
-# Run the adjustment algorithm
-final_points, history, avg_distances = random_point_adjustment(detected_numbers)
+    for field in field_positions:
+        # Calculate distances to all points
+        distances = [(point, distance.euclidean(point, field)) for point in np.vstack((final_points, new_points))]
+        sorted_points = sorted(distances, key=lambda x: x[1])
 
-# Plot the evolution
-plot_evolution_with_background(history, detected_numbers, "detected_circles_with_numbers.jpg")
+        # Take the closest 2 points and calculate their mean distance
+        if len(sorted_points) >= 2:
+            closest_points = sorted_points[:2]
+            mean_distance = np.mean([d for _, d in closest_points])
 
-# Display final points
-plt.figure(figsize=(8, 8))
-plt.title("Final Points")
-plt.xlabel("X Coordinate")
-plt.ylabel("Y Coordinate")
-plt.axis("equal")
+            # Expand to include other points within 140% of the mean distance
+            for point, dist in sorted_points[2:]:
+                if dist <= 1.4 * mean_distance:
+                    closest_points.append((point, dist))
+                else:
+                    break  # Stop as the list is sorted by distance
 
-# Plot detected fields
-field_positions = [(int(x), int(y)) for _, x, y in detected_numbers]
-for x, y in field_positions:
-    plt.scatter(x, y, color='blue', s=100, label="Field" if 'Field' not in plt.gca().get_legend_handles_labels()[1] else "")
+            # Calculate the final mean distance of all close points
+            mean_distance = np.mean([d for _, d in closest_points])
 
-# Plot final points
-for x, y in final_points:
-    plt.scatter(x, y, color='red', s=20, label="Point" if 'Point' not in plt.gca().get_legend_handles_labels()[1] else "")
+            # Add 6 new points around the field at 60° increments
+            for i in range(6):
+                # Find the closest point to the current field
+                closest_point = min(final_points, key=lambda p: distance.euclidean(p, field))
+                # Calculate the angle of the closest point relative to the field
+                closest_angle = np.arctan2(closest_point[1] - field[1], closest_point[0] - field[0])
+                angle = closest_angle + np.deg2rad(60 * i) 
+                x_offset = mean_distance * np.cos(angle)
+                y_offset = mean_distance * np.sin(angle)
+                new_point = (field[0] + x_offset, field[1] + y_offset)
 
-plt.legend()
-plt.grid(True)
-plt.show()"""
+                # Check if a similar point already exists (distance and angular check)
+                is_valid = True
+                combined_points = np.vstack((final_points, new_points)) if new_points.size > 0 else final_points
+                
+                for p in combined_points:  # Include both existing and new points in the check
+                    # Check distance
+                    if distance.euclidean(field, p) <= 1.4 * mean_distance:
+                        continue
+
+                    # Check angular proximity
+                    existing_angle = np.arctan2(p[1] - field[1], p[0] - field[0])
+                    new_angle = np.arctan2(new_point[1] - field[1], new_point[0] - field[0])
+                    if abs(existing_angle - new_angle) <= angular_tolerance_rad:
+                        is_valid = False
+                        break
+
+                if is_valid:
+                    new_points = np.vstack((new_points, new_point))  # Add new_point to new_points
+                    history.append(np.vstack((new_point, combined_points)))
+
+    # Add new points to the final points list if there are any new points
+    if new_points.size > 0:
+        final_points = np.vstack((final_points, new_points))
+
+    return final_points, new_points
+
 
 # Generate point adjustment history
 final_points, history, avg_distances = random_point_adjustment(detected_numbers)
 
+# Apply the adjustment to the final points
+final_points, new_points = adjust_points_to_fields(final_points, [tuple(map(int, field[1:])) for field in detected_numbers], history)
+
+# Update the history
+#history.append(final_points)
+
 # Animate the evolution
-animate_evolution(history, detected_numbers, "detected_circles_with_numbers.jpg", interval=500, save_as_gif=False)
+animate_evolution(history, detected_numbers, "detected_circles_with_numbers.jpg", interval=750, save_as_gif=False)
+
+# Visualize the updated history
+plot_final_with_background(final_points, detected_numbers, "detected_circles_with_numbers.jpg")
