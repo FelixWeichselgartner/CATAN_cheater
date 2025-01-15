@@ -194,7 +194,8 @@ def plot_final_with_background(final_points, detected_numbers, image_path):
     plt.show()
 
 
-def adjust_points_to_fields(final_points, field_positions, history, radius=10, angular_tolerance=15):
+def adjust_points_to_fields(final_points, field_positions, history, angular_tolerance=15):
+    distance_factor = 1.75
     new_points = np.empty((0, 2))  # Initialize as an empty 2D NumPy array
     angular_tolerance_rad = np.deg2rad(angular_tolerance)  # Convert angular tolerance to radians
 
@@ -210,13 +211,14 @@ def adjust_points_to_fields(final_points, field_positions, history, radius=10, a
 
             # Expand to include other points within 140% of the mean distance
             for point, dist in sorted_points[2:]:
-                if dist <= 1.4 * mean_distance:
+                if dist <= distance_factor * mean_distance:
                     closest_points.append((point, dist))
                 else:
                     break  # Stop as the list is sorted by distance
 
             # Calculate the final mean distance of all close points
             mean_distance = np.mean([d for _, d in closest_points])
+            history.append(np.array([p for p, _ in closest_points]))
 
             # Add 6 new points around the field at 60° increments
             for i in range(6):
@@ -235,7 +237,7 @@ def adjust_points_to_fields(final_points, field_positions, history, radius=10, a
                 
                 for p in combined_points:  # Include both existing and new points in the check
                     # Check distance
-                    if distance.euclidean(field, p) <= 1.4 * mean_distance:
+                    if distance.euclidean(field, p) <= distance_factor * mean_distance:
                         continue
 
                     # Check angular proximity
@@ -247,7 +249,7 @@ def adjust_points_to_fields(final_points, field_positions, history, radius=10, a
 
                 if is_valid:
                     new_points = np.vstack((new_points, new_point))  # Add new_point to new_points
-                    history.append(np.vstack((new_point, combined_points)))
+                    history.append(np.vstack((new_point, np.array([p for p, _ in closest_points]))))
 
     # Add new points to the final points list if there are any new points
     if new_points.size > 0:
@@ -266,7 +268,7 @@ final_points, new_points = adjust_points_to_fields(final_points, [tuple(map(int,
 #history.append(final_points)
 
 # Animate the evolution
-animate_evolution(history, detected_numbers, "detected_circles_with_numbers.jpg", interval=750, save_as_gif=False)
+animate_evolution(history, detected_numbers, "detected_circles_with_numbers.jpg", interval=1500, save_as_gif=False)
 
 # Visualize the updated history
 plot_final_with_background(final_points, detected_numbers, "detected_circles_with_numbers.jpg")
