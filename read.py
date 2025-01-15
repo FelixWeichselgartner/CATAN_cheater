@@ -134,7 +134,7 @@ if filtered_circles is not None:
 
             # Check if OCR result is valid
             if circle_text.isdigit():
-                detected_numbers.append(circle_text)
+                detected_numbers.append((circle_text, x, y))
                 # Annotate the detected number on the original image
                 cv2.putText(
                     output_image, 
