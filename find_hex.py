@@ -2,6 +2,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.spatial import distance
 from matplotlib.animation import FuncAnimation
+import matplotlib.pyplot as plt
+from matplotlib.widgets import Button
 
 
 # Example detected numbers
@@ -71,10 +73,10 @@ def random_point_adjustment(detected_numbers, num_points=2000, radius=10, max_it
         #points = np.array([p for p, d in zip(points, distances) if d <= 1.15 * overall_avg_distance])
         filtered_points = []
         for point, dist in zip(points, distances):
-            if dist <= 1.15 * overall_avg_distance:
+            if dist <= 1.2 * overall_avg_distance:
                 # Check if point is not too close to any detected field
                 min_dist_to_field = min(distance.euclidean(point, field) for field in field_positions)
-                if min_dist_to_field >= 0.2 * overall_avg_distance:
+                if min_dist_to_field >= 0.25 * overall_avg_distance:
                     filtered_points.append(point)
         points = np.array(filtered_points)
 
@@ -92,7 +94,8 @@ def random_point_adjustment(detected_numbers, num_points=2000, radius=10, max_it
     return np.array(final_points), history, avg_distances
 
 
-def animate_evolution(history, detected_numbers, image_path, interval=500, save_as_gif=False):
+# Modified function with buttons for navigation
+def animate_evolution(history, detected_numbers, image_path):
     # Load the background image
     img = plt.imread(image_path)
 
@@ -117,21 +120,37 @@ def animate_evolution(history, detected_numbers, image_path, interval=500, save_
     ax.set_xlim(0, img.shape[1])
     ax.set_ylim(img.shape[0], 0)  # Invert y-axis
 
-    # Update function for animation
+    # State for the current frame
+    current_frame = [0]  # Use a list to allow modification inside nested functions
+
+    # Update function for displaying a specific frame
     def update(frame):
         current_points = history[frame]
         point_scatter.set_offsets(current_points)
-        return point_scatter,
+        fig.canvas.draw_idle()
 
-    # Number of frames is equal to the number of states in history
-    frames = len(history)
+    # Button callback functions
+    def next_frame(event):
+        if current_frame[0] < len(history) - 1:
+            current_frame[0] += 1
+            update(current_frame[0])
 
-    # Create animation
-    ani = FuncAnimation(fig, update, frames=frames, interval=interval, blit=True, repeat=False)
+    def last_frame(event):
+        if current_frame[0] > 0:
+            current_frame[0] -= 1
+            update(current_frame[0])
 
-    if save_as_gif:
-        from matplotlib.animation import PillowWriter
-        ani.save("points_adjustment.gif", writer=PillowWriter(fps=1000 // interval))
+    # Add buttons for navigation
+    ax_next = plt.axes([0.85, 0.05, 0.1, 0.075])  # Position for the "Next" button
+    btn_next = Button(ax_next, 'Next')
+    btn_next.on_clicked(next_frame)
+
+    ax_last = plt.axes([0.7, 0.05, 0.1, 0.075])  # Position for the "Last" button
+    btn_last = Button(ax_last, 'Last')
+    btn_last.on_clicked(last_frame)
+
+    # Initialize with the first frame
+    update(current_frame[0])
 
     plt.show()
 
@@ -200,6 +219,7 @@ def adjust_points_to_fields(final_points, field_positions, history, angular_tole
     angular_tolerance_rad = np.deg2rad(angular_tolerance)  # Convert angular tolerance to radians
 
     for field in field_positions:
+        print(field)
         # Calculate distances to all points
         distances = [(point, distance.euclidean(point, field)) for point in np.vstack((final_points, new_points))]
         sorted_points = sorted(distances, key=lambda x: x[1])
@@ -220,36 +240,112 @@ def adjust_points_to_fields(final_points, field_positions, history, angular_tole
             mean_distance = np.mean([d for _, d in closest_points])
             history.append(np.array([p for p, _ in closest_points]))
 
-            # Add 6 new points around the field at 60° increments
+            nl = list()
+            i = 0
+            for cp in closest_points:
+                if i == 6: 
+                    break
+                p = cp[0]
+                # CAREFUL: Y-axis is down, so angles are different
+                closest_angle = np.arctan2(-(p[1] - field[1]), p[0] - field[0])
+                if closest_angle < 0:
+                    closest_angle += 2 * np.pi
+                nl.append((closest_angle, cp[0]))
+                i += 1
+            print(nl)
+            sl = sorted(nl, key=lambda x: x[0])
+            print('unsorted')
+            print(sl)
+
+            if not len(sl) > 2:
+                continue
+            i = 0
+            while True:
+                ds = list()
+                for j in range(1, len(sl)):
+                    res = sl[j][0] - sl[j-1][0]
+                    print(f'{sl[j][0]} - {sl[j-1][0]} = {res}')
+                    ds.append(res)
+                #d10 = np.mod(sl[1][0] - sl[0][0], np.pi)
+                #d21 = np.mod(sl[2][0] - sl[1][0], np.pi)
+                #d02 = np.mod(sl[0][0] - sl[2][0], np.pi)
+                #print(d10 / np.pi * 180, d21 / np.pi * 180, d02 / np.pi * 180)
+                # Check if any of the differences exceed 80 degrees (converted to radians)
+                al = list()
+                for c in range(len(sl)):
+                    a = sl[c][0] 
+                    al.append(a)
+                print(np.array(al))
+                print(ds)
+                if any(diff > np.deg2rad(80) for diff in ds):#[d10, d21, d02]):
+                    # Rearrange the list 'sl'
+                    l = len(sl) - 1
+                    sl = [sl[l]] + sl[:l]
+                else:
+                    break
+                
+                if i == 10:
+                    #exit()
+                    history.append(np.vstack((np.array([p for _, p in sl]))))
+                    print('sus')
+
+                    break
+                i += 1
+
+            print('sorted')
+            print(sl)
+
+            cms = list()
+            for n in range(len(sl) - 1):
+                mean_distance = distance.euclidean(sl[n + 1][1], sl[n][1])
+                a = np.sqrt(3) / 2 * mean_distance
+                m = sl[n + 1][1] + (sl[n][1] - sl[n + 1][1]) * 0.5
+                #history.append(np.vstack((sl[n + 1][1], sl[n][1], m)))
+                dir = field - m
+                norm = dir / np.linalg.norm(dir)
+                cms.append(m + norm * a)
+            print('cms')
+            print(cms)
+            stacked = np.vstack(cms)  # Combine arrays into a 2D array
+            cm = np.mean(stacked, axis=0)  # Calculate the mean along the columns
+
+            history.append(np.vstack((stacked, np.array([p for _, p in sl]))))
+            #history.append([cm, m] + sl)
+
+            # Add 3 new points around the field at 60° increments
             for i in range(6):
                 # Find the closest point to the current field
-                closest_point = min(final_points, key=lambda p: distance.euclidean(p, field))
+                #closest_point = min(final_points, key=lambda p: distance.euclidean(p, cm))
                 # Calculate the angle of the closest point relative to the field
-                closest_angle = np.arctan2(closest_point[1] - field[1], closest_point[0] - field[0])
-                angle = closest_angle + np.deg2rad(60 * i) 
-                x_offset = mean_distance * np.cos(angle)
-                y_offset = mean_distance * np.sin(angle)
-                new_point = (field[0] + x_offset, field[1] + y_offset)
+                #closest_angle = np.arctan2(closest_point[1] - cm[1], closest_point[0] - cm[0])
+                angle = sl[-1][0] + np.deg2rad(60 * (i + 1)) 
+                x_offset = mean_distance * np.cos(-angle)
+                y_offset = mean_distance * np.sin(-angle)
+                new_point = (cm[0] + x_offset, cm[1] + y_offset)
+                #history.append(np.vstack(new_point))
 
                 # Check if a similar point already exists (distance and angular check)
                 is_valid = True
-                combined_points = np.vstack((final_points, new_points)) if new_points.size > 0 else final_points
+                combined_points = np.vstack((final_points, cm, new_points)) if new_points.size > 0 else final_points
                 
+                # TODO: enhance
+                """
                 for p in combined_points:  # Include both existing and new points in the check
                     # Check distance
-                    if distance.euclidean(field, p) <= distance_factor * mean_distance:
+                    if distance.euclidean(cm, p) <= distance_factor * mean_distance:
                         continue
 
                     # Check angular proximity
-                    existing_angle = np.arctan2(p[1] - field[1], p[0] - field[0])
-                    new_angle = np.arctan2(new_point[1] - field[1], new_point[0] - field[0])
+                    existing_angle = np.arctan2(p[1] - cm[1], p[0] - cm[0])
+                    new_angle = np.arctan2(new_point[1] - cm[1], new_point[0] - cm[0])
                     if abs(existing_angle - new_angle) <= angular_tolerance_rad:
                         is_valid = False
-                        break
+                        break"""
 
                 if is_valid:
                     new_points = np.vstack((new_points, new_point))  # Add new_point to new_points
                     history.append(np.vstack((new_point, np.array([p for p, _ in closest_points]))))
+        print()
 
     # Add new points to the final points list if there are any new points
     if new_points.size > 0:
@@ -268,7 +364,7 @@ final_points, new_points = adjust_points_to_fields(final_points, [tuple(map(int,
 #history.append(final_points)
 
 # Animate the evolution
-animate_evolution(history, detected_numbers, "detected_circles_with_numbers.jpg", interval=1500, save_as_gif=False)
+animate_evolution(history, detected_numbers, "detected_circles_with_numbers.jpg")#, save_as_gif=False)
 
 # Visualize the updated history
 plot_final_with_background(final_points, detected_numbers, "detected_circles_with_numbers.jpg")
